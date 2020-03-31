@@ -24,7 +24,7 @@ The output image is a 244x244 tif image with 3 soil-reflectance bands (Near infr
 
 Author:        Felipe Jordan
 Date created:  12/16/2019
-Last modified: 01/02/2020
+Last modified: 03/30/2020
 '''
 
 # Import the Earth Engine Python Package:
