@@ -7,9 +7,7 @@
 
 ## Usage
 
-1. Download imagery
-
-This section will download large tiles encompasing groups of villages to a Google Drive folder of your choice. Each tile is a mozaic of the available imagery within that year, selecting the best images in terms of their average level of NDVI (hence, images captures in full growth season are prioratized). By default, the Teillet C smooth correction method is applied to each image before the mozaic, but that can be turned off in fourth step.
+1. **Download imagery**: This section will download large tiles encompasing groups of villages to a Google Drive folder of your choice. Each tile is a mozaic of the available imagery within that year, selecting the best images in terms of their average level of NDVI (hence, images captures in full growth season are prioratized). By default, the Teillet C smooth correction method is applied to each image before the mozaic, but that can be turned off in fourth step.
     1. Create a local folder in the root of the repository. Git will ignore this folder.
     2. Create file local/villages.csv. Must include three columns: village, with the name or ID of each village; lon, with latitude in decimal form (e.g 6.176874); and lon, with longitude in decimal form (e.g -14.114580).
     3. Run d0_assignBatch.py script. See script for details.
