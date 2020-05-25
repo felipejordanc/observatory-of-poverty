@@ -36,7 +36,7 @@ import ee
 ee.Initialize()
 
 ########################## Helper functions and main class ---------
-def keepClear(region):
+def keepClear(region,sat):
     '''
     Initializes a function that is passed to the map method in GEE
     The child function takes an image as an argument, and mask all pixels that either:
@@ -48,18 +48,24 @@ def keepClear(region):
     '''
     def keepClear_child(image):
         # Select FMASK QA band and select bits associated to clouds and clouds cover
-        qa  = ee.Image(image).select('pixel_qa')
+        im  = ee.Image(image)
+        qa  = im.select('pixel_qa')
         qa_clouds            = extractQABits(qa,6,7)
         qa_cloudsShadows     = extractQABits(qa,3,3)
         # Select Saturation QA band and select bite associated to saturation
-        qa2 = ee.Image(image).select('radsat_qa')
-        qa_saturation        = extractQABits(qa2,1,1)
+        qa2 = im.select('radsat_qa')
+        qa_saturation        = extractQABits(qa2,0,0)
         # Create mask where valid pixels have low confidence of clound and clound shadow and are not saturated
         mask                 = qa_clouds.lte(1).And(qa_cloudsShadows.eq(0)).And(qa_saturation.eq(0))
+        if sat=='L8':
+            # Cirrus clounds and terrain oclussion in landsat 8
+            qa_cirrus  = extractQABits(qa,8,9)
+            qa_terrain = extractQABits(qa,10,10)
+            mask       = mask.And(qa_cirrus.lte(1)).And(qa_terrain.eq(0))
         # Claculate fraction of valid pixels in the region and return image with QI property with fraction of valid pixels
         valid = mask.reduceRegion(ee.Reducer.sum(),region).get('pixel_qa')
         tot   = mask.reduceRegion(ee.Reducer.count(),region).get('pixel_qa')
-        return image.updateMask(mask).copyProperties(image).set({'QI':ee.Number(valid).divide(tot)})
+        return im.updateMask(mask).copyProperties(im).set({'QI':ee.Number(valid).divide(tot)})
     return keepClear_child
 
 def extractQABits(qaBand, bitStart, bitEnd):
@@ -71,7 +77,7 @@ def extractQABits(qaBand, bitStart, bitEnd):
     qaBits = qaBand.rightShift(bitStart).mod(2**numBits)
     return qaBits
 
-def addNDVI(region):
+def addNDVI(region,ndvi_bands):
     '''
     Initializes a function that is passed to the map method in GEE
     The child function takes an image as an argument, calculates the NDVI for each pixel, set negative values to zero, and saves in
@@ -79,7 +85,7 @@ def addNDVI(region):
     The region is passed to the child_function from the main function.
     '''
     def addNDVI_child(image):
-        ndvi = ee.Image(image).normalizedDifference(['B4', 'B3']).rename('ndvi')
+        ndvi = ee.Image(image).normalizedDifference(ndvi_bands).rename('ndvi')
         ndvi = ndvi.where(ndvi.lt(0),0)
         average_ndvi = ndvi.reduceRegion(ee.Reducer.mean(),region).get('ndvi')
         return image.copyProperties(image).set({'NDVI':ee.Number(average_ndvi)})
@@ -143,9 +149,18 @@ def makeName(s):
 class downloadImagery():
     def __init__(self,folder,year,sensor,size,topocorrection=True):
         collections = {'L5':{'SR':['LANDSAT/LT05/C01/T1_SR','LANDSAT/LT05/C01/T2_SR'],'TOA':['LANDSAT/LT05/C01/T1_TOA','LANDSAT/LT05/C01/T2_TOA']},
-                       'L7':{'SR':['LANDSAT/LE07/C01/T1_SR','LANDSAT/LE07/C01/T1_SR'],'TOA':['LANDSAT/LE07/C01/T1_TOA','LANDSAT/LE07/C01/T2_TOA']}}
-        final_bands        = {'L5':[['B1','B2','B3','B4','B5','B6','B7'],[]],
-                              'L7':[['B1','B2','B3','B4','B5','B6','B7'],['B8']]}
+                       'L7':{'SR':['LANDSAT/LE07/C01/T1_SR','LANDSAT/LE07/C01/T2_SR'],'TOA':['LANDSAT/LE07/C01/T1_TOA','LANDSAT/LE07/C01/T2_TOA']},
+                       'L8':{'SR':['LANDSAT/LC08/C01/T1_SR','LANDSAT/LC08/C01/T2_SR'],'TOA':['LANDSAT/LC08/C01/T1_TOA','LANDSAT/LC08/C01/T2_TOA']},
+                       }
+        final_bands        = {'L5':[['B1','B2','B3','B4','B5','B6','B7'],
+                                    [],
+                                    ['B4','B3']],
+                              'L7':[['B1','B2','B3','B4','B5','B6','B7'],
+                                    ['B8'],
+                                    ['B4','B3']],
+                              'L8':[['B1','B2','B3','B4','B5','B6','B7','B10','B11'],
+                                    ['B8'],
+                                    ['B5','B4']]}
         self.folder  = folder
         self.year    = year
         self.sensor  = sensor
@@ -154,9 +169,10 @@ class downloadImagery():
             self.collection = collections[sensor]
             self.final_spec_bands = final_bands[sensor][0]
             self.final_pan_bands  = final_bands[sensor][1]
+            self.ndvi_bands       = final_bands[sensor][2]
             self.pan              = bool(len(self.final_pan_bands))
         except:
-            print("Sensor must be L5 or L7")
+            print("Sensor must be L5, L7, or L8")
         self.size     = size
         self.size_adj = int(size/(1+int(self.pan)))
         self.scale = 30
@@ -186,9 +202,8 @@ class downloadImagery():
 
         def addTOA(img):
             ''' add panchromatic band from TOA collection '''
-            pan = toa_collection().filter(ee.Filter.eq('LANDSAT_PRODUCT_ID',img.get('LANDSAT_ID'))).select(self.final_pan_bands).first()
-            img = img.addBands(pan)
-            return img
+            pan = toa_collection().filter(ee.Filter.eq('LANDSAT_PRODUCT_ID',img.get('LANDSAT_ID'))).select(['B8']).first()
+            return ee.Algorithms.If(pan,img.addBands(pan),pan)
         #######################################
 
         # Collect SR imagery
@@ -199,14 +214,12 @@ class downloadImagery():
                                            '{0}-12-31'.format(self.year)).filterBounds(self.region)
         # Add TOA bands
         if self.pan:
-            collection = collection.map(addTOA)
+            collection = collection.map(addTOA,True)
 
         # Keep only imagery where more than 95% of pixels within region of interest are valid
-        collection = collection.map(keepClear(self.region)).filter(ee.Filter.gte('QI',0.95))
-
+        collection = collection.map(keepClear(self.region,self.sensor)).filter(ee.Filter.gte('QI',0.95))
         # Save length of collection
         self.collection_length=collection.size().getInfo()
-
         return collection
 
     def prepare_batch(self,coords):
@@ -218,7 +231,7 @@ class downloadImagery():
         self.region = ee.FeatureCollection([ee.Feature(self.coords_to_box(c)) for c in coords]).union().geometry()
 
         # Collect imagery within region of interest and sort on average NDVI (highest to lowest)
-        image  = self.collect_images().map(addNDVI(self.region)).sort('NDVI',False)
+        image  = self.collect_images().map(addNDVI(self.region,self.ndvi_bands)).sort('NDVI',False)
 
         # Spectral bands: Topographic correction of option selected and reducer (first not null). Save to instance.
         image_spec = image.select(self.final_spec_bands)
