@@ -12,7 +12,7 @@ Last modified: 04/08/2020
 import os
 import numpy as np
 import rasterio as rio
-from download_imagery_batch import makeName
+from download_batch import makeName
 from affine import Affine
 import pandas as pd
 from skimage.transform import pyramid_gaussian
@@ -162,3 +162,4 @@ if False:
     # The to_tif method saves a stacked or pansharpen image to a tif file. The what argument determines whether it is the former or the later ('stack' for the former, 'pansharpen' for the later). The bands argument can be provided to select bands of the multispectral bands to be passed to the pansharpen method.
     com.to_tif('../local/examples/com_stack.tif')
     com.to_tif('../local/examples/com_pansharpen_rgb.tif','pansharpen',[0,1,2])
+
