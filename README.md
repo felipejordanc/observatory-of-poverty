@@ -1,5 +1,5 @@
 # observatory-of-poverty
-
+This repository contains scripts and data to reproduce the Forthcoming article in Social Indicators Research
 ## Required libraries
 * Google Earth Engine API
 * Geopandas
